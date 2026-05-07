@@ -3,14 +3,12 @@ use crate::utils::node_contains_comments;
 use air_r_syntax::*;
 use biome_rowan::AstNode;
 
-pub struct EqualsNa;
-
 /// Version added: 0.0.8
 ///
 /// ## What it does
 ///
-/// Check for `x == NA`, `x != NA` and `x %in% NA`, and replaces those by
-/// `is.na()` calls.
+/// Check for `x == NA`, `x != NA`, `x %in% NA` and `x %notin% NA`, and
+/// replaces those by `is.na()` or `!is.na()` calls.
 ///
 /// ## Why is this bad?
 ///
@@ -34,18 +32,6 @@ pub struct EqualsNa;
 /// x <- c(1, 2, 3, NA)
 /// is.na(x)
 /// ```
-impl Violation for EqualsNa {
-    fn name(&self) -> String {
-        "equals_na".to_string()
-    }
-    fn body(&self) -> String {
-        "Comparing to NA with `==`, `!=` or `%in%` is problematic.".to_string()
-    }
-    fn suggestion(&self) -> Option<String> {
-        Some("Use `is.na()` instead.".to_string())
-    }
-}
-
 pub fn equals_na(ast: &RBinaryExpression) -> anyhow::Result<Option<Diagnostic>> {
     let RBinaryExpressionFields { left, operator, right } = ast.as_fields();
 
@@ -55,10 +41,13 @@ pub fn equals_na(ast: &RBinaryExpression) -> anyhow::Result<Option<Diagnostic>> 
 
     let operator_is_in =
         operator.kind() == RSyntaxKind::SPECIAL && operator.text_trimmed() == "%in%";
+    let operator_is_notin =
+        operator.kind() == RSyntaxKind::SPECIAL && operator.text_trimmed() == "%notin%";
 
     if operator.kind() != RSyntaxKind::EQUAL2
         && operator.kind() != RSyntaxKind::NOT_EQUAL
         && !operator_is_in
+        && !operator_is_notin
     {
         return Ok(None);
     };
@@ -72,11 +61,12 @@ pub fn equals_na(ast: &RBinaryExpression) -> anyhow::Result<Option<Diagnostic>> 
         "NA_complex_",
     ];
 
-    let left_is_na = na_values.contains(&left.to_string().trim());
-    let right_is_na = na_values.contains(&right.to_string().trim());
+    let left_is_na = na_values.contains(&left.as_str());
+    let right_is_na = na_values.contains(&right.as_str());
 
     // `NA %in% x` is equivalent to `anyNA(x)`, not `is.na(x)`
-    if operator_is_in && left_is_na {
+    // `NA %notin% x` is equivalent to `!anyNA(x)`, not `!is.na(x)`
+    if (operator_is_in || operator_is_notin) && left_is_na {
         return Ok(None);
     }
 
@@ -87,45 +77,42 @@ pub fn equals_na(ast: &RBinaryExpression) -> anyhow::Result<Option<Diagnostic>> 
     }
     let range = ast.syntax().text_trimmed_range();
 
-    let replacement = if left_is_na {
-        right.trim().to_string()
-    } else {
-        left.trim().to_string()
-    };
+    let replacement = if left_is_na { right } else { left };
 
-    let diagnostic = match operator.kind() {
-        RSyntaxKind::EQUAL2 => Diagnostic::new(
-            EqualsNa,
-            range,
-            Fix {
-                content: format!("is.na({replacement})"),
-                start: range.start().into(),
-                end: range.end().into(),
-                to_skip: node_contains_comments(ast.syntax()),
-            },
-        ),
-        RSyntaxKind::NOT_EQUAL => Diagnostic::new(
-            EqualsNa,
-            range,
-            Fix {
-                content: format!("!is.na({replacement})"),
-                start: range.start().into(),
-                end: range.end().into(),
-                to_skip: node_contains_comments(ast.syntax()),
-            },
-        ),
-        RSyntaxKind::SPECIAL if operator.text_trimmed() == "%in%" => Diagnostic::new(
-            EqualsNa,
-            range,
-            Fix {
-                content: format!("is.na({replacement})"),
-                start: range.start().into(),
-                end: range.end().into(),
-                to_skip: node_contains_comments(ast.syntax()),
-            },
-        ),
+    let operator_text = operator.text_trimmed();
+    let should_negate = match operator.kind() {
+        RSyntaxKind::EQUAL2 => false,
+        RSyntaxKind::NOT_EQUAL => true,
+        RSyntaxKind::SPECIAL if operator_text == "%in%" => false,
+        RSyntaxKind::SPECIAL if operator_text == "%notin%" => true,
         _ => unreachable!("This case is an early return"),
     };
+
+    let replacement = if should_negate {
+        format!("!is.na({replacement})")
+    } else {
+        format!("is.na({replacement})")
+    };
+    let suggestion = if should_negate {
+        "Use `!is.na()` instead."
+    } else {
+        "Use `is.na()` instead."
+    };
+
+    let diagnostic = Diagnostic::new(
+        ViolationData::new(
+            "equals_na".to_string(),
+            format!("Comparing to NA with `{operator_text}` is problematic."),
+            Some(suggestion.to_string()),
+        ),
+        range,
+        Fix {
+            content: replacement,
+            start: range.start().into(),
+            end: range.end().into(),
+            to_skip: node_contains_comments(ast.syntax()),
+        },
+    );
 
     Ok(Some(diagnostic))
 }
