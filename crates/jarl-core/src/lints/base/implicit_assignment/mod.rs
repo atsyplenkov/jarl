@@ -207,7 +207,11 @@ mod tests {
         );
         // Triple chained assignments
         expect_no_lint("if (TRUE) a <- b <- c <- 1", "implicit_assignment", None);
-        expect_no_lint("if (TRUE) { a <- b <- c <- 1 }", "implicit_assignment", None);
+        expect_no_lint(
+            "if (TRUE) { a <- b <- c <- 1 }",
+            "implicit_assignment",
+            None,
+        );
         // Nested braced blocks with chained assignment
         expect_no_lint(
             "if (TRUE) { if (TRUE) { obj$x <- y <- foo() } }",
