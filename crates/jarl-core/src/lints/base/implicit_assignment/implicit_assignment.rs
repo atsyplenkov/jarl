@@ -69,30 +69,24 @@ pub fn implicit_assignment(
 
     // Early return: if this assignment's RHS is also an assignment
     // (i.e., we're the left part of a chain like `a <- b <- 1`)
-    if let Ok(right) = ast.right() {
-        if let Some(right_binary) = right.as_r_binary_expression() {
-            if let Ok(right_op) = right_binary.operator() {
-                if is_assignment_op(&right_op) {
-                    return Ok(None);
-                }
-            }
-        }
+    if let Ok(right) = ast.right()
+        && let Some(right_binary) = right.as_r_binary_expression()
+        && let Ok(right_op) = right_binary.operator()
+        && is_assignment_op(&right_op)
+    {
+        return Ok(None);
     }
 
     // Early return: if this assignment is the RHS of a parent assignment
     // (i.e., we're the right part of a chain like `a <- b <- 1`)
-    if let Some(parent) = ast.syntax().parent() {
-        if let Some(parent_binary) = RBinaryExpression::cast(parent) {
-            if let Ok(parent_op) = parent_binary.operator() {
-                if is_assignment_op(&parent_op) {
-                    if let Ok(parent_rhs) = parent_binary.right() {
-                        if parent_rhs.syntax() == ast.syntax() {
-                            return Ok(None);
-                        }
-                    }
-                }
-            }
-        }
+    if let Some(parent) = ast.syntax().parent()
+        && let Some(parent_binary) = RBinaryExpression::cast(parent)
+        && let Ok(parent_op) = parent_binary.operator()
+        && is_assignment_op(&parent_op)
+        && let Ok(parent_rhs) = parent_binary.right()
+        && parent_rhs.syntax() == ast.syntax()
+    {
+        return Ok(None);
     }
 
     // We want to report the use of assignment in function arguments, but not

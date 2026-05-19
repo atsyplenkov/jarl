@@ -200,7 +200,11 @@ mod tests {
         expect_no_lint("while (TRUE) a <- b <- 1", "implicit_assignment", None);
         expect_no_lint("while (TRUE) { a <- b <- 1 }", "implicit_assignment", None);
         expect_no_lint("for (i in 1:2) a <- b <- 1", "implicit_assignment", None);
-        expect_no_lint("for (i in 1:2) { a <- b <- 1 }", "implicit_assignment", None);
+        expect_no_lint(
+            "for (i in 1:2) { a <- b <- 1 }",
+            "implicit_assignment",
+            None,
+        );
         // Nested braced blocks with chained assignment
         expect_no_lint(
             "if (TRUE) { if (TRUE) { obj$x <- y <- foo() } }",
