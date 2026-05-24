@@ -48,18 +48,6 @@ pub fn implicit_assignment(
     ast: &RBinaryExpression,
     checker: &Checker,
 ) -> anyhow::Result<Option<Diagnostic>> {
-    let operator = ast.operator()?;
-    if operator.kind() != RSyntaxKind::ASSIGN
-        && operator.kind() != RSyntaxKind::SUPER_ASSIGN
-        && operator.kind() != RSyntaxKind::ASSIGN_RIGHT
-        && operator.kind() != RSyntaxKind::SUPER_ASSIGN_RIGHT
-    {
-        return Ok(None);
-    };
-
-    // Skip chained assignments like `a <- b <- 1` or `x <- y <<- z`
-
-    // Helper to check if an operator is an assignment operator
     let is_assignment_op = |op: &RSyntaxToken| {
         op.kind() == RSyntaxKind::ASSIGN
             || op.kind() == RSyntaxKind::SUPER_ASSIGN
@@ -67,18 +55,13 @@ pub fn implicit_assignment(
             || op.kind() == RSyntaxKind::SUPER_ASSIGN_RIGHT
     };
 
-    // Early return: if this assignment's RHS is also an assignment
-    // (i.e., we're the left part of a chain like `a <- b <- 1`)
-    if let Ok(right) = ast.right()
-        && let Some(right_binary) = right.as_r_binary_expression()
-        && let Ok(right_op) = right_binary.operator()
-        && is_assignment_op(&right_op)
-    {
+    let operator = ast.operator()?;
+    if !is_assignment_op(&operator) {
         return Ok(None);
-    }
+    };
 
-    // Early return: if this assignment is the RHS of a parent assignment
-    // (i.e., we're the right part of a chain like `a <- b <- 1`)
+    // Skip chained assignments like `a <- b <- 1` or `x <- y <<- z`
+    // by returning early if this assignment is the RHS of a parent assignment.
     if let Some(parent) = ast.syntax().parent()
         && let Some(parent_binary) = RBinaryExpression::cast(parent)
         && let Ok(parent_op) = parent_binary.operator()
